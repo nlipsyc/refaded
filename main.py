@@ -1,15 +1,39 @@
 from pathlib import Path
-from typing import Union
 from uuid import UUID
 import polars as pl
 import spacy
 from uuid import UUID
 from spacy.tokens import Doc, Token
+from numerizer import spacy_numerize
 
 from db import RelationalDB, insert_song, insert_ngrams
 
-# %%
+# Mabye stick this in another file?
+NON_STOP_WORDS = {
+    "zero",
+    "one",
+    "two",
+    "three",
+    "four",
+    "five",
+    "six",
+    "seven",
+    "eight",
+    "nine",
+    "ten",
+    "eleven",
+    "twelve",
+    "thirteen",
+    "fourteen",
+    "fifteen",
+    "sixteen",
+    "seventeen",
+    "eighteen",
+    "nineteen",
+    "twenty",
+}
 nlp = spacy.load("en_core_web_sm")
+nlp.Defaults.stop_words -= NON_STOP_WORDS
 
 
 def ingest_csv(filename: Path | str = "song_lyrics.csv") -> pl.LazyFrame:
@@ -22,53 +46,33 @@ def is_valid_token(token: Token) -> bool:
     return not token_is_invalid
 
 
-def get_ngram_component_from_token(token: Token) -> str:
+def process_ngram_token(token: Token) -> str:
     """Determine the appropriate string representation of a token."""
     if numerized := token._.numerized != token.text:
         return numerized
     return token.lemma_
 
 
-def ngram_generator(lyrics: Doc, ngram_length=5) -> list[Token]:
+def ngram_generator(lyrics: list[Token], ngram_length=5) -> list[str]:
     """Iterate through a song, yielding lists of ngrams until no full ones remain."""
 
-    tokens_in_ngram: list[Token] = []
-    for potential_token in lyrics:
-        if len(tokens_in_ngram) < ngram_length:
-            if is_valid_token(potential_token):
-                tokens_in_ngram.append(potential_token)
-
-        # to_yield = Ngram(
-        #     clean_text=" ".join(token.lemma_ for token in tokens_in_ngram),
-        #     start_idx_unprocessed=tokens_in_ngram[0].idx,
-        #     end_idx_unprocessed=tokens_in_ngram[-1].idx+len(tokens_in_ngram[-1].idx),
-        # )
-        elif len(tokens_in_ngram) < ngram_length:
-            raise StopIteration
-        else:
-            tokens_to_return = tokens_in_ngram
-            tokens_in_ngram = []
-            yield tokens_to_return
-
-
-# %%
+    last_ngramable_token = len(lyrics) - ngram_length
+    for i, _ in enumerate(lyrics):
+        if i < last_ngramable_token:
+            yield [token.text for token in lyrics[i : i + ngram_length]]
 
 
 def generate_ngrams_from_lyrics(lyrics: str, song_id: UUID) -> list[Token]:
     doc: Doc = nlp(lyrics)
+    numerized = spacy_numerize(doc, retokenize=True)
+    valid_tokens = [
+        process_ngram_token(token) for token in numerized if is_valid_token(token)
+    ]
 
     # Here we should transform these lists of tokens into Ngram objects that will
     # match up with the DB table
-    return [ngram for ngram in ngram_generator(doc)]
-
-
-# %%
-def _token_to_db(ngram: list[Token], song_id: UUID) -> tuple[str, str, int, int]:
-    ngram_text = " ".join([token.text for token in ngram])
-    start_index = ngram[0].idx
-    end_index = ngram[-1] + len(ngram[-1])
-
-    return (ngram_text, song_id, start_index, end_index)
+    ngrams = ngram_generator(valid_tokens)
+    return [ngram for ngram in ngrams]
 
 
 def generate_song_insert_values(song: dict[str, str]) -> tuple[str]:
@@ -76,12 +80,6 @@ def generate_song_insert_values(song: dict[str, str]) -> tuple[str]:
 
     values = (song["artist"], lyrics)
     return values
-
-
-# %%
-# generate_song_insert_values(next(rap[1].iter_rows(named=True)))
-
-# %%
 
 
 def process_songs():
@@ -95,3 +93,22 @@ def process_songs():
         insert_ngrams(song["lyrics"], song_id)
 
         print([c for c in db.cur])
+
+
+def process_song(song: dict):
+    # Move this up a level if we don't want to commit so frequently?
+    db = RelationalDB()
+    lyrics = song["lyrics"]
+    song_id = insert_song((song["artist"], lyrics), db)
+    ngrams = generate_ngrams_from_lyrics(lyrics)
+    insert_ngrams(ngrams, song_id)
+    lyrics = nlp(song["lyrics"])
+
+
+if __name__ == "__main__":
+    data = ingest_csv()
+    # Come back to this and batch it with slices
+    # https://docs.pola.rs/api/python/stable/reference/lazyframe/api/polars.LazyFrame.slice.html
+
+    for row in data.collect.iter_rows(named=True):
+        process_song(row)
