@@ -1,16 +1,19 @@
 from pathlib import Path
+import uuid
 
 import polars as pl
 import pytest
-import spacy
 from numerizer import numerize  # noqa: F401
-from spacy.tokens import Doc, Token
+from spacy.tokens import Doc
 
 from main import (
+    generate_ngrams_from_lyrics,
     ingest_csv,
     is_valid_token,
     ngram_generator,
 )
+
+TEST_UUID = uuid.UUID("0" * 32)
 
 
 def test_ingest_csv():
@@ -55,38 +58,33 @@ def test_ingest_csv():
     ]
 
 
-def create_doc(text: str) -> Doc:
-    nlp = spacy.load("en_core_web_sm")
-    return nlp(text)
-
-
-def create_token(text: str) -> Token:
-    return create_doc(text)[0]
-
-
 @pytest.mark.parametrize(
     ["token", "expected"],
     [
-        (create_token("Adidas"), True),
-        (create_token("the"), False),
-        (create_token("three"), True),
-        (create_token("3"), True),
-        (create_token(" "), False),
-        (create_token("a"), False),
-        (create_token("Jay"), True),
+        ("Adidas", True),
+        ("the", False),
+        ("three", True),
+        ("3", True),
+        (" ", False),
+        ("a", False),
+        ("Jay", True),
     ],
 )
-def test_is_valid_token(token: Token, expected: bool):
-    assert is_valid_token(token) is expected
+def test_is_valid_token(token: str, expected: bool, create_token):
+    assert is_valid_token(create_token(token)) is expected
 
 
 @pytest.fixture
-def doc() -> Doc:
-    text = (
+def lyrics() -> str:
+    return (
         "I was going two and a half blocks to the store and saw three hundred flies "
         "and a goat."
     )
-    return create_doc(text)
+
+
+@pytest.fixture
+def doc(lyrics: str, create_doc) -> Doc:
+    return create_doc(lyrics)
 
 
 # @pytest.mark.parametrize(["token_index", "expected_string"], [(1, "foo")])
@@ -101,11 +99,20 @@ def test_ngram_generator(doc: Doc):
     assert len(tokens) == 20
 
     ngrams = [n for n in ngram_generator(tokens, ngram_length=5)]
-    assert len(ngrams) == 15
+    assert len(ngrams) == 16
 
-    assert ngrams[3] == ["two", "and", "a", "half", "blocks"]
+    assert [token.text for token in ngrams[3]] == ["two", "and", "a", "half", "blocks"]
 
 
-def test_generate_ngrams_from_lyrics():
-    ...
-    # """TODO"""
+def test_generate_ngrams_from_lyrics(lyrics):
+    ngrams = generate_ngrams_from_lyrics(lyrics)
+    # Is set as a constant in main.py
+    assert all(len(ngram) == 5 for ngram in ngrams)
+    assert [
+        [token._.processed_representation for token in ngram] for ngram in ngrams
+    ] == [
+        ["go", "2.5", "block", "store", "see"],
+        ["2.5", "block", "store", "see", "300"],
+        ["block", "store", "see", "300", "fly"],
+        ["store", "see", "300", "fly", "goat"],
+    ]

@@ -1,3 +1,4 @@
+import string
 import psycopg
 from psycopg import sql
 from spacy.tokens import Token
@@ -12,7 +13,7 @@ class RelationalDB:
         self.cur = self.conn.cursor()
 
 
-def insert_song(values: tuple[str], db: RelationalDB) -> UUID:
+def insert_song(values: tuple[str, str], db: RelationalDB) -> UUID:
     query = sql.SQL("INSERT INTO songs (artist, lyrics) VALUES (%s, %s) RETURNING id;")
     res = db.cur.execute(query, values)
 
@@ -20,28 +21,30 @@ def insert_song(values: tuple[str], db: RelationalDB) -> UUID:
     return res.fetchone()[0]
 
 
-def format_ngram_for_db(ngram: list[Token], song_id: UUID) -> tuple[str, str, int, int]:
+def format_ngram_for_db(
+    ngram: list[Token], song_id: UUID
+) -> tuple[str, UUID, int, int]:
     """Functionally an entity that handles DB serialization.
 
-    Full DDD if overkill for something like this I think.
+    Full DDD is overkill for something like this I think.
     """
-    ngram_text = " ".join([token.text for token in ngram])
+    ngram_text = " ".join([token._.processed_representation for token in ngram])
+    ngram_text = ngram_text.lower()
+    ngram_text = ngram_text.translate(str.maketrans("", "", string.punctuation))
     start_index = ngram[0].idx
-    end_index = ngram[-1] + len(ngram[-1])
+    end_index = ngram[-1].idx
 
     return (ngram_text, song_id, start_index, end_index)
 
 
-def insert_ngrams(ngram: list[Token], song_id: UUID, db: RelationalDB):
+def insert_ngrams(ngrams: list[list[Token]], song_id: UUID, db: RelationalDB):
     # Make sure it's called with this
     # ngrams = generate_ngrams_from_lyrics(lyrics, song_id)
     # Must also run the output through _token_to_db
-    payload = format_ngram_for_db(ngram, song_id)
+    payload = [format_ngram_for_db(ngram, song_id) for ngram in ngrams]
     query = sql.SQL(
         "INSERT INTO ngrams (ngram, song_id, start_in_song, end_in_song) VALUES (%s, %s, %s, %s);"
     )
-    res = db.cur.executemany(query, payload)
+    db.cur.executemany(query, payload)
 
     db.conn.commit()
-    # Does this return anything?
-    return res.fetchone()[0]
