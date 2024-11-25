@@ -108,10 +108,11 @@ if __name__ == "__main__":
 
     cursor = 0
     limit = 100
-    while cursor <= limit:
+    while cursor < limit:
         chunk = data.slice(cursor, step)
 
-        for row in chunk.collect().iter_rows(named=True):
+        for i, row in enumerate(chunk.collect().iter_rows(named=True)):
+            print(f"Processing song {i}")
             process_song(row)
 
         cursor += step

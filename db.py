@@ -25,7 +25,7 @@ def insert_song(values: tuple[str, str, str], db: RelationalDB) -> UUID:
 
 def format_ngram_for_db(
     ngram: list[Token], song_id: UUID
-) -> tuple[str, UUID, int, int]:
+) -> tuple[str, UUID, int, int, str]:
     """Functionally an entity that handles DB serialization.
 
     Full DDD is overkill for something like this I think.
@@ -36,7 +36,7 @@ def format_ngram_for_db(
     start_index = ngram[0].idx
     end_index = ngram[-1].idx
 
-    return (ngram_text, song_id, start_index, end_index)
+    return (ngram_text, song_id, start_index, end_index, ngram_text)
 
 
 def insert_ngrams(ngrams: list[list[Token]], song_id: UUID, db: RelationalDB):
@@ -44,9 +44,38 @@ def insert_ngrams(ngrams: list[list[Token]], song_id: UUID, db: RelationalDB):
     # ngrams = generate_ngrams_from_lyrics(lyrics, song_id)
     # Must also run the output through _token_to_db
     payload = [format_ngram_for_db(ngram, song_id) for ngram in ngrams]
-    query = sql.SQL(
-        "INSERT INTO ngrams (ngram, song_id, start_in_song, end_in_song) VALUES (%s, %s, %s, %s);"
-    )
-    db.cur.executemany(query, payload)
+    for ngram in ngrams:
+        query = sql.SQL(
+            # """
+            # SELECT nc.id from (
+            #     WITH try_create_ngram_contents_id as (
+            #     INSERT INTO ngram_contents (contents)
+            #     VALUES (%s)
+            #     ON CONFLICT
+            #     DO NOTHING
+            #     RETURNING id
+            #     )
+            #     SELECT id FROM try_create_ngram_contents_id
+            #     UNION ALL
+            #     SELECT id FROM ngram_contents WHERE ngram_contents = %s
+            #     LIMIT 1
+            # ) as nc_id
+            """
+            INSERT INTO ngram_contents (contents)
+            VALUES ({})
+            ON CONFLICT
+            DO NOTHING;
+
+            INSERT INTO ngrams (ngram_contents_id, song_id, start_in_song, end_in_song)
+            SELECT
+            id,
+            {},
+            {},
+            {}
+            FROM ngram_contents
+            WHERE contents = {};
+            """
+        ).format(*format_ngram_for_db(ngram, song_id))
+        db.conn.execute(query)
 
     db.conn.commit()
