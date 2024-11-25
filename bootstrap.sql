@@ -1,6 +1,7 @@
 CREATE TABLE songs (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     artist text,
+    title text NOT NULL,
     lyrics text NOT NULL
 );
 

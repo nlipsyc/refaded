@@ -13,8 +13,10 @@ class RelationalDB:
         self.cur = self.conn.cursor()
 
 
-def insert_song(values: tuple[str, str], db: RelationalDB) -> UUID:
-    query = sql.SQL("INSERT INTO songs (artist, lyrics) VALUES (%s, %s) RETURNING id;")
+def insert_song(values: tuple[str, str, str], db: RelationalDB) -> UUID:
+    query = sql.SQL(
+        "INSERT INTO songs (artist, title, lyrics) VALUES (%s, %s, %s) RETURNING id;"
+    )
     res = db.cur.execute(query, values)
 
     db.conn.commit()

@@ -95,7 +95,7 @@ def process_song(song: dict):
     db = RelationalDB()
     lyrics = song["lyrics"]
     # TODO Make sure these are all in consistent title case
-    song_id = insert_song((song["artist"], lyrics), db)
+    song_id = insert_song((song["artist"], song["title"], lyrics), db)
     ngrams = generate_ngrams_from_lyrics(lyrics)
     insert_ngrams(ngrams, song_id, db)
 
@@ -104,6 +104,14 @@ if __name__ == "__main__":
     data = ingest_csv()
     # TODO Come back to this and batch it with slices
     # https://docs.pola.rs/api/python/stable/reference/lazyframe/api/polars.LazyFrame.slice.html
+    step = 100
 
-    for row in data.collect.iter_rows(named=True):
-        process_song(row)
+    cursor = 0
+    limit = 100
+    while cursor <= limit:
+        chunk = data.slice(cursor, step)
+
+        for row in chunk.collect().iter_rows(named=True):
+            process_song(row)
+
+        cursor += step

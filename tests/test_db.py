@@ -38,35 +38,32 @@ def test_test_db(postgresql):
 
 def test_insert_song(postgresql, db):
     expected_artist = "A Tribe Called Quest"
+    expected_title = "Check the Rhime"
     expected_lyrics = (
         "Yo, Phife, you remember that routine \n That we used to make spiffy like"
         "Mr. Clean?"
     )
-    expected_ngrams = [
-        ["Yo", "Phife", "remember", "routine", "spiffy"],
-        ["Phife", "remember", "routine", "spiffy", "like"],
-        ["remember", "routine", "spiffy", "like", "Mr."],
-        ["routine", "spiffy", "like", "Mr.", "Clean"],
-    ]
 
-    song_id = insert_song((expected_artist, expected_lyrics), db)
+    song_id = insert_song((expected_artist, expected_title, expected_lyrics), db)
     assert isinstance(song_id, uuid.UUID)
 
     cur = postgresql.cursor()
-    cur.execute("SELECT artist, lyrics FROM songs WHERE id = %s;", (song_id,))
-    artist, lyrics = cur.fetchone()
+    cur.execute("SELECT artist, title, lyrics FROM songs WHERE id = %s;", (song_id,))
+    artist, title, lyrics = cur.fetchone()
     assert artist == expected_artist
+    assert title == expected_title
     assert lyrics == expected_lyrics
 
 
 @pytest.fixture()
 def song_in_db(db: RelationalDB) -> uuid.UUID:
     artist = "A Tribe Called Quest"
+    title = "Check the Rhime"
     lyrics = (
         "Yo, Phife, you remember that routine \n That we used to make spiffy like "
         "Mr. Clean?"
     )
-    song_id = insert_song((artist, lyrics), db)
+    song_id = insert_song((artist, title, lyrics), db)
     return song_id
 
 
