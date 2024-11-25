@@ -1,5 +1,4 @@
 from pathlib import Path
-import uuid
 
 import polars as pl
 import pytest
@@ -12,8 +11,6 @@ from main import (
     is_valid_token,
     ngram_generator,
 )
-
-TEST_UUID = uuid.UUID("0" * 32)
 
 
 def test_ingest_csv():

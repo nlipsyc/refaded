@@ -1,4 +1,3 @@
-import uuid
 import pytest
 
 from db import RelationalDB, insert_ngrams, insert_song
@@ -45,7 +44,7 @@ def test_insert_song(postgresql, db):
     )
 
     song_id = insert_song((expected_artist, expected_title, expected_lyrics), db)
-    assert isinstance(song_id, uuid.UUID)
+    assert isinstance(song_id, int)
 
     cur = postgresql.cursor()
     cur.execute("SELECT artist, title, lyrics FROM songs WHERE id = %s;", (song_id,))
@@ -56,7 +55,7 @@ def test_insert_song(postgresql, db):
 
 
 @pytest.fixture()
-def song_in_db(db: RelationalDB) -> uuid.UUID:
+def song_in_db(db: RelationalDB) -> int:
     artist = "A Tribe Called Quest"
     title = "Check the Rhime"
     lyrics = (
@@ -67,7 +66,7 @@ def song_in_db(db: RelationalDB) -> uuid.UUID:
     return song_id
 
 
-def test_insert_ngrams(postgresql, db: RelationalDB, song_in_db: uuid.UUID):
+def test_insert_ngrams(postgresql, db: RelationalDB, song_in_db: int):
     expected_ngrams = [
         ["Yo", "Phife", "remember", "routine", "spiffy"],
         ["Phife", "remember", "routine", "spiffy", "like"],

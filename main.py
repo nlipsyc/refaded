@@ -1,6 +1,5 @@
 from pathlib import Path
 from typing import Any, Generator
-from uuid import UUID
 import polars as pl
 import spacy
 from spacy.tokens import Doc, Token
@@ -107,11 +106,12 @@ if __name__ == "__main__":
     step = 100
 
     cursor = 0
-    limit = 100
+    limit = 1000
     while cursor <= limit:
         chunk = data.slice(cursor, step)
 
-        for row in chunk.collect().iter_rows(named=True):
+        for i, row in enumerate(chunk.collect().iter_rows(named=True)):
+            print(f"Processing song {cursor+i}")
             process_song(row)
 
         cursor += step

@@ -3,8 +3,6 @@ import psycopg
 from psycopg import sql
 from spacy.tokens import Token
 
-from uuid import UUID
-
 
 class RelationalDB:
     def __init__(self, host="localhost", user="postgres", password="pass1234") -> None:
@@ -13,7 +11,7 @@ class RelationalDB:
         self.cur = self.conn.cursor()
 
 
-def insert_song(values: tuple[str, str, str], db: RelationalDB) -> UUID:
+def insert_song(values: tuple[str, str, str], db: RelationalDB) -> int:
     query = sql.SQL(
         "INSERT INTO songs (artist, title, lyrics) VALUES (%s, %s, %s) RETURNING id;"
     )
@@ -23,9 +21,7 @@ def insert_song(values: tuple[str, str, str], db: RelationalDB) -> UUID:
     return res.fetchone()[0]
 
 
-def format_ngram_for_db(
-    ngram: list[Token], song_id: UUID
-) -> tuple[str, UUID, int, int]:
+def format_ngram_for_db(ngram: list[Token], song_id: int) -> tuple[str, int, int, int]:
     """Functionally an entity that handles DB serialization.
 
     Full DDD is overkill for something like this I think.
@@ -39,7 +35,7 @@ def format_ngram_for_db(
     return (ngram_text, song_id, start_index, end_index)
 
 
-def insert_ngrams(ngrams: list[list[Token]], song_id: UUID, db: RelationalDB):
+def insert_ngrams(ngrams: list[list[Token]], song_id: int, db: RelationalDB):
     # Make sure it's called with this
     # ngrams = generate_ngrams_from_lyrics(lyrics, song_id)
     # Must also run the output through _token_to_db
