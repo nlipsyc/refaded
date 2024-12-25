@@ -30,7 +30,8 @@ def format_ngram_for_db(ngram: list[Token], song_id: int) -> tuple[str, int, int
     ngram_text = ngram_text.lower()
     ngram_text = ngram_text.translate(str.maketrans("", "", string.punctuation))
     start_index = ngram[0].idx
-    end_index = ngram[-1].idx
+    last_word = ngram[-1]
+    end_index = last_word.idx + len(last_word) + 1
 
     return (ngram_text, song_id, start_index, end_index)
 

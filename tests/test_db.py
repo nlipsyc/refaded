@@ -7,7 +7,7 @@ from main import generate_ngrams_from_lyrics
 @pytest.fixture(autouse=True)
 def config_db(postgresql):
     """Create tables."""
-    with open("bootstrap.sql", "r") as bootstrap:
+    with open("sql/bootstrap.sql", "r") as bootstrap:
         cur = postgresql.cursor()
         cur.execute("\n".join(line for line in bootstrap))
         postgresql.commit()
@@ -92,4 +92,8 @@ def test_insert_ngrams(postgresql, db: RelationalDB, song_in_db: int):
     assert song_id == song_in_db
     assert ngram_text == "routine spiffy like mr clean"
     assert start_index == 29
-    assert end_index == 76
+    assert end_index == 82
+    assert (
+        lyrics[start_index:end_index]
+        == "routine \n That we used to make spiffy like Mr. Clean?"
+    )

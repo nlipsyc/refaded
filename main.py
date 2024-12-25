@@ -1,11 +1,18 @@
+import argparse
+import logging
+import time
+from concurrent import futures
 from pathlib import Path
 from typing import Any, Generator
+
 import polars as pl
 import spacy
-from spacy.tokens import Doc, Token
 from numerizer import spacy_numerize
+from spacy.tokens import Doc, Token
 
-from db import RelationalDB, insert_song, insert_ngrams
+from db import RelationalDB, insert_ngrams, insert_song
+
+log = logging.getLogger(__name__)
 
 NGRAM_LENGTH = 5
 # Mabye stick this in another file?
@@ -32,12 +39,13 @@ NON_STOP_WORDS = {
     "nineteen",
     "twenty",
 }
+LANGUAGES_TO_SKIP = {"az", "ru", "tr"}
 nlp = spacy.load("en_core_web_sm")
 nlp.Defaults.stop_words -= NON_STOP_WORDS
 
 
 def set_spacy_attrs():
-    Token.set_extension("processed_representation", default=None)
+    Token.set_extension("processed_representation", default=None, force=True)
 
 
 set_spacy_attrs()
@@ -89,29 +97,96 @@ def generate_ngrams_from_lyrics(lyrics: str) -> list[list[Token]]:
     return [ngram for ngram in ngrams]
 
 
-def process_song(song: dict):
-    # Move this up a level if we don't want to commit so frequently?
+def _song_is_valid(song: dict) -> bool:
+    """Check if song should be skipped.
+
+    These could all be done on the DF filtering, but they were discovered during
+    processing. They are added in here to avoid having to restart the processing as
+    each one is found.
+    """
+    if len(song["lyrics"]) > 30_000:  # smallint index in pg limits this to ~4,500 words
+        log.warning(f"Skipping song {song['title']}. Song length suggests it is spam.")
+        return False
+    elif not song["title"]:
+        log.warning(f"Skipping song by artist {song['artist']}. Song has not title.")
+        return False
+    return True
+
+
+def _replace_dotless_i(lyrics: str) -> str:
+    """Replace Turkish dotless i (ı) with Latin i.
+
+    For some reason this showed up a bunch in the dataset and confused numerizer
+    """
+    return lyrics.replace("ı", "i")
+
+
+def process_song(song: dict) -> None:
     db = RelationalDB()
+    if not _song_is_valid(song):
+        return
+
     lyrics = song["lyrics"]
+    lyrics = _replace_dotless_i(lyrics)
+
     # TODO Make sure these are all in consistent title case
     song_id = insert_song((song["artist"], song["title"], lyrics), db)
-    ngrams = generate_ngrams_from_lyrics(lyrics)
+    try:
+        ngrams = generate_ngrams_from_lyrics(lyrics)
+    except Exception:
+        if (
+            song["language_cld3"] in LANGUAGES_TO_SKIP
+            or song["language_ft"] in LANGUAGES_TO_SKIP
+        ):
+            # These rarely cause exceptions and we want to include them when they don't.
+            log.warning(
+                f"Skipping song {song['title']}. Song is in an unsupported language."
+            )
+            return
+        else:
+            print(
+                f"Ngram processing failed on song {song['title']} by {song['artist']}."
+            )
+            raise
     insert_ngrams(ngrams, song_id, db)
 
 
 if __name__ == "__main__":
+    logging.basicConfig(filename="refaded_processing.log", level=logging.INFO)
+
+    start_time = time.time()
+    parser = argparse.ArgumentParser(
+        prog="Refaded", description="Refaded data processing script"
+    )
+    parser.add_argument("-c", "--cursor", type=int)
+    parser.add_argument("-l", "--limit", type=int)
+    parser.add_argument("-s", "--step", type=int, default=1_000)
+
+    args = parser.parse_args()
+
+    start_data = time.time()
     data = ingest_csv()
-    # TODO Come back to this and batch it with slices
-    # https://docs.pola.rs/api/python/stable/reference/lazyframe/api/polars.LazyFrame.slice.html
-    step = 100
+    print(f"CSV ingestion took {time.time()-start_data} seconds")
 
-    cursor = 0
-    limit = 1000
-    while cursor <= limit:
-        chunk = data.slice(cursor, step)
+    cursor = args.cursor
+    limit = args.limit
+    step = args.step
 
-        for i, row in enumerate(chunk.collect().iter_rows(named=True)):
-            print(f"Processing song {cursor+i}")
-            process_song(row)
+    while cursor < limit:
+        start_chunk = time.time()
+        chunk = data.slice(cursor, min(step, limit - cursor))
+        print(f"Chunk creation took {time.time()-start_chunk} seconds")
 
+        collect_start = time.time()
+
+        row_counter = 0
+        with futures.ProcessPoolExecutor(max_workers=12) as executor:
+            for row in executor.map(
+                process_song, chunk.collect().iter_rows(named=True)
+            ):
+                print(f"Processing song {cursor+row_counter}")
+                row_counter += 1
+        print(
+            f"Time elapsed: {round(time.time() - start_time)} seconds. Rows processed: {row_counter}"
+        )
         cursor += step
